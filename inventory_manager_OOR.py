@@ -1,7 +1,8 @@
 import json
 import os
-from product import Product
 from inventory import Inventory
+from physicalproduct import PhysicalProduct
+from digitalproduct import DigitalProduct
 
 FILE_NAME = "inventory.json"
 
@@ -14,8 +15,18 @@ def load_inventory(inventory_obj):
             with open(FILE_NAME, "r") as file:
                 data = json.load(file)
                 for item in data:
-                    # Reconstruct Product objects from stored dictionary data
-                    prod = Product(item["id"], item["name"], item["price"], item["stock"])
+                    # Reconstruct specific subclass instances based on product_type
+                    prod_type = item.get("product_type", "physical")
+                    if prod_type == "digital":
+                        prod = DigitalProduct(
+                            item["id"], item["name"], item["price"],
+                            item["stock"], item.get("file_size", 0.0)
+                        )
+                    else:
+                        prod = PhysicalProduct(
+                            item["id"], item["name"], item["price"],
+                            item["stock"], item.get("weight", 0.0)
+                        )
                     inventory_obj.add_product(prod)
             print("Inventory loaded successfully.\n")
         except Exception as e:
@@ -28,35 +39,44 @@ def load_inventory(inventory_obj):
 
 
 def load_default_data(inventory_obj):
-    """Loads default product objects into the inventory."""
+    """Loads default product objects (both Physical and Digital) into inventory."""
     default_products = [
-        Product("8001", "Sweet Madame", "$9.50", 1659),
-        Product("8002", "Lavender Melon", "$8.00", 11),
-        Product("8003", "Ghost Pie", "$15.00", 3172),
-        Product("8004", "Beetle Soup", "$5.00", 456),
-        Product("8005", "The Flood", "$3.43", 343),
+        PhysicalProduct("8001", "Gaming Laptop", "$1500.00", 10, 2.5),
+        PhysicalProduct("8002", "Mechanical Keyboard", "$80.00", 25, 0.9),
+        DigitalProduct("8003", "Photo Editor Pro", "$49.99", 100, 750.5),
+        DigitalProduct("8004", "Antivirus Security Suite", "$29.99", 200, 150.0),
     ]
     for prod in default_products:
         inventory_obj.add_product(prod)
 
 
 def save_inventory(inventory_obj):
-    """Saves the current inventory collection to inventory.json."""
+    """Saves the current inventory collection to inventory.json including subclass attributes."""
     data = []
     for prod in inventory_obj.products:
-        data.append({
+        item_data = {
             "id": prod._product_id,
             "name": prod.name,
             "price": prod._price,
-            "stock": prod.stock
-        })
+            "stock": prod.stock,
+        }
+        
+        # Save specific attributes depending on object type
+        if isinstance(prod, PhysicalProduct):
+            item_data["product_type"] = "physical"
+            item_data["weight"] = prod.weight
+        elif isinstance(prod, DigitalProduct):
+            item_data["product_type"] = "digital"
+            item_data["file_size"] = prod.file_size
+
+        data.append(item_data)
+
     with open(FILE_NAME, "w") as file:
         json.dump(data, file, indent=4)
 
 
 def add_product_workflow(inventory_obj):
-    """Handles user input and creates a new Product object to add to inventory."""
-    # Auto-generate next ID based on highest current numeric ID
+    """Handles user input to create either a PhysicalProduct or DigitalProduct."""
     max_id = 8000
     for prod in inventory_obj.products:
         try:
@@ -67,6 +87,17 @@ def add_product_workflow(inventory_obj):
             pass
     new_id = str(max_id + 1)
 
+    # 1. Choose Product Type
+    print("Select Product Type:")
+    print("1. Physical Product")
+    print("2. Digital Product")
+    while True:
+        type_choice = input("Enter type (1 or 2): ").strip()
+        if type_choice in ["1", "2"]:
+            break
+        print("Invalid choice. Please enter 1 or 2.")
+
+    # 2. Get Product Name
     while True:
         name = input("Enter product name: ").strip()
         if not name:
@@ -76,6 +107,7 @@ def add_product_workflow(inventory_obj):
         else:
             break
 
+    # 3. Get Price
     while True:
         price_input = input("Enter product price ($): ").strip()
         try:
@@ -86,8 +118,9 @@ def add_product_workflow(inventory_obj):
                 price = f"${price_val:.2f}"
                 break
         except ValueError:
-            print("Error: Invalid price. Please enter a valid decimal number (e.g., 9.99).")
+            print("Error: Invalid price. Please enter a valid decimal number.")
 
+    # 4. Get Stock
     while True:
         stock_input = input("Enter initial stock: ").strip()
         if stock_input.isdigit():
@@ -95,14 +128,40 @@ def add_product_workflow(inventory_obj):
             break
         print("Error: Invalid stock amount. Please enter a valid integer.")
 
-    # Create a new Product instance and add it via the Inventory object
-    new_product = Product(new_id, name, price, stock)
+    # 5. Get Subclass Specific Attribute and Create Object
+    if type_choice == "1":
+        while True:
+            try:
+                weight = float(input("Enter weight (kg): ").strip())
+                if weight <= 0:
+                    print("Weight must be greater than 0.")
+                    continue
+                break
+            except ValueError:
+                print("Invalid input. Please enter a numerical weight.")
+        
+        new_product = PhysicalProduct(new_id, name, price, stock, weight)
+
+    else:
+        while True:
+            try:
+                size = float(input("Enter download size (MB): ").strip())
+                if size <= 0:
+                    print("Download size must be greater than 0.")
+                    continue
+                break
+            except ValueError:
+                print("Invalid input. Please enter a numerical file size.")
+
+        new_product = DigitalProduct(new_id, name, price, stock, size)
+
+    # Delegate object addition to Inventory class
     inventory_obj.add_product(new_product)
     print(f"Product '{name}' added successfully with ID: {new_id}.\n")
 
 
 def update_stock_workflow(inventory_obj):
-    """Finds a product by ID and updates its stock using its internal method."""
+    """Finds a product by ID and updates its stock through the product's own method."""
     prod_id = input("Enter product ID to update: ").strip()
     for prod in inventory_obj.products:
         if prod._product_id == prod_id:
@@ -111,7 +170,7 @@ def update_stock_workflow(inventory_obj):
                 if added_stock < 0:
                     print("Stock cannot be negative.\n")
                     return
-                # Utilizing encapsulation: calling the product's own method to manage state
+                # Delegate stock update logic to the product instance (Encapsulation)
                 prod.update_stock(added_stock)
                 print()
                 return
@@ -134,10 +193,9 @@ def print_menu():
 
 def main():
     print("=========================================")
-    print("OOP INVENTORY MANAGEMENT SYSTEM")
+    print("INVENTORY MANAGEMENT SYSTEM")
     print("=========================================\n")
 
-    # Initialize the Inventory object (manages the collection)
     my_inventory = Inventory()
     load_inventory(my_inventory)
 
@@ -152,9 +210,11 @@ def main():
         elif choice == "2":
             print()
             add_product_workflow(my_inventory)
+            print()
         elif choice == "3":
             print()
             update_stock_workflow(my_inventory)
+            print()
         elif choice == "4":
             print()
             query = input("Enter Product ID or Name to search: ")
